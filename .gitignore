@@ -27,3 +27,7 @@ Thumbs.db
 # Environment variables
 .env
 .env.*
+
+# Build artifacts
+*.zip
+layer_build/

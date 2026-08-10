@@ -21,6 +21,7 @@ read-only after build, it is safe to load it once and cache it in a module-level
 global so warm Lambda invocations skip the S3 download entirely.
 """
 import io
+import json
 import os
 import pickle
 import tempfile
@@ -59,15 +60,36 @@ def get_embeddings():
 
 
 def get_llm():
-    """Return a Bedrock LLM client for answer generation."""
-    return Bedrock(
-        model_id=LLM_MODEL,
-        model_kwargs={
-            "max_tokens_to_sample": 300,
-            "temperature": 0.1,
-            "top_p": 0.9,
-        },
-    )
+    """Return a callable that generates an answer using the Bedrock LLM.
+
+    Uses the Amazon Nova Messages API directly via boto3 so it works with
+    Amazon-owned models (which do not require the Anthropic use-case approval)
+    and with the current inference-profile model IDs.
+    """
+    client = boto3.client("bedrock-runtime")
+
+    def _invoke(prompt):
+        body = {
+            "inferenceConfig": {
+                "max_new_tokens": 300,
+                "temperature": 0.1,
+                "top_p": 0.9,
+            },
+            "messages": [
+                {"role": "user", "content": [{"text": prompt}]},
+            ],
+        }
+        response = client.invoke_model(
+            modelId=LLM_MODEL,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps(body),
+        )
+        payload = json.loads(response["body"].read())
+        # Nova returns the answer under output.message.content[0].text
+        return payload["output"]["message"]["content"][0]["text"]
+
+    return _invoke
 
 
 # ---------------------------------------------------------------------------
@@ -105,10 +127,18 @@ def build_index(bucket=None, pdf_key=None, index_key=None):
     vectorstore = FAISS.from_documents(chunks, get_embeddings())
 
     # 4. Serialize the index and upload it to S3.
-    buffer = io.BytesIO()
-    pickle.dump(vectorstore, buffer)
-    buffer.seek(0)
-    s3.upload_fileobj(buffer, bucket, index_key)
+    # The FAISS vectorstore retains a reference to the embedding function,
+    # which wraps a non-picklable boto3 Bedrock client. Strip it before
+    # pickling and restore it afterwards so the index can be serialized.
+    embedding_fn = vectorstore.embedding_function
+    vectorstore.embedding_function = None
+    try:
+        buffer = io.BytesIO()
+        pickle.dump(vectorstore, buffer)
+        buffer.seek(0)
+        s3.upload_fileobj(buffer, bucket, index_key)
+    finally:
+        vectorstore.embedding_function = embedding_fn
 
     # Cache it so the same process can query immediately.
     global _INDEX_CACHE
@@ -140,6 +170,9 @@ def load_index(bucket=None, index_key=None, force_reload=False):
     buffer.seek(0)
 
     _INDEX_CACHE = pickle.load(buffer)
+    # Restore the embedding function that was stripped before pickling.
+    if getattr(_INDEX_CACHE, "embedding_function", None) is None:
+        _INDEX_CACHE.embedding_function = get_embeddings()
     print(f"Index loaded from s3://{bucket}/{index_key}.")
     return _INDEX_CACHE
 
@@ -168,7 +201,7 @@ def query_index(question, vectorstore=None, k=4):
 
     # 3. Generate the answer with the Bedrock LLM.
     llm = get_llm()
-    answer = llm.invoke(prompt)
+    answer = llm(prompt)
 
     return {
         "answer": answer,
