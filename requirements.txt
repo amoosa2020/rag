@@ -1,0 +1,12 @@
+# Dependencies for the AWS Lambda RAG deployment.
+# Install these into the deployment package or a Lambda layer.
+# NOTE: boto3 is pre-installed in the Lambda runtime, but listed here for
+# local testing / layer builds.
+
+langchain-classic==1.0.8
+langchain-community==0.4.2
+langchain-core==1.5.3
+langchain-text-splitters==1.1.2
+pypdf>=4.0.0
+faiss-cpu>=1.8.0
+boto3>=1.34.0
