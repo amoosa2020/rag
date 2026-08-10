@@ -30,4 +30,5 @@ Thumbs.db
 
 # Build artifacts
 *.zip
-layer_build/
+layer_build/rag-layer.zip
+layer_build/python/
