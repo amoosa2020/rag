@@ -1,6 +1,4 @@
 # AWS Lambda entry point for the RAG statement rephraser.
-# Lambda's default handler is "lambda_function.lambda_handler", so this file
-# MUST be named lambda_function.py and expose a function named lambda_handler.
 import json
 
 import rag_index as rag
