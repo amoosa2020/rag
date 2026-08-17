@@ -1,0 +1,50 @@
+# Lightweight Lambda layer for the RAG backend dependencies.
+# Uses the official AWS Lambda Python 3.13 base image so the compiled
+# binaries (faiss-cpu, etc.) are compatible with the Lambda runtime.
+# NOTE: `unstructured` is intentionally EXCLUDED to keep the layer small.
+# PowerPoint (.pptx) parsing is done with the lightweight `python-pptx`
+# package directly (see _load_pptx in rag_index.py / build_embedding.py).
+FROM public.ecr.aws/lambda/python:3.13
+
+# Install the native shared libraries that PIL's compiled extensions depend on
+# (libtiff, libjpeg, libwebp, etc.). The Lambda runtime does not ship these by
+# default, and python-pptx imports PIL at module load time.
+RUN dnf install -y libtiff libjpeg-turbo libwebp zlib libpng freetype openjpeg2 lcms2 harfbuzz glib2 && \
+    dnf clean all
+
+# Install the dependencies into /opt/python (the Lambda layer path).
+RUN pip install \
+    langchain-classic==1.0.8 \
+    langchain-community==0.4.2 \
+    langchain-core==1.5.3 \
+    langchain-text-splitters==1.1.2 \
+    pypdf>=4.0.0 \
+    faiss-cpu>=1.8.0 \
+    boto3>=1.34.0 \
+    python-pptx>=1.0.0 \
+    --target /opt/python
+
+# Copy the installed native shared libraries into the layer's lib/ directory so
+# they are available at runtime.
+RUN mkdir -p /opt/lib && \
+    cp -a /usr/lib64/libtiff* /opt/lib/ 2>/dev/null; \
+    cp -a /usr/lib64/libjpeg* /opt/lib/ 2>/dev/null; \
+    cp -a /usr/lib64/libwebp* /opt/lib/ 2>/dev/null; \
+    cp -a /usr/lib64/libz* /opt/lib/ 2>/dev/null; \
+    cp -a /usr/lib64/libLerc* /opt/lib/ 2>/dev/null; \
+    cp -a /usr/lib64/libdeflate* /opt/lib/ 2>/dev/null; \
+    cp -a /usr/lib64/libjbig* /opt/lib/ 2>/dev/null; \
+    cp -a /usr/lib64/libsharpyuv* /opt/lib/ 2>/dev/null; \
+    cp -a /usr/lib64/libfreetype* /opt/lib/ 2>/dev/null; \
+    cp -a /usr/lib64/libpng* /opt/lib/ 2>/dev/null; \
+    cp -a /usr/lib64/libopenjp2* /opt/lib/ 2>/dev/null; \
+    cp -a /usr/lib64/liblcms2* /opt/lib/ 2>/dev/null; \
+    cp -a /usr/lib64/libharfbuzz* /opt/lib/ 2>/dev/null; \
+    cp -a /usr/lib64/libglib* /opt/lib/ 2>/dev/null; \
+    cp -a /usr/lib64/libpcre2* /opt/lib/ 2>/dev/null; \
+    cp -a /usr/lib64/libbrotli* /opt/lib/ 2>/dev/null; \
+    true
+
+# Remove caches to keep the layer small (use python, not find, since the
+# Lambda base image does not ship the `find` utility).
+RUN python -c "import shutil, os; [shutil.rmtree(p) for p,_,_ in os.walk('/opt/python') if '__pycache__' in p]"

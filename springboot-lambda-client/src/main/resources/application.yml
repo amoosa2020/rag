@@ -1,0 +1,17 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: springboot-lambda-client
+
+aws:
+  # AWS region where the rag_backend Lambda is deployed.
+  region: us-east-2
+  lambda:
+    # Name (or ARN) of the rag_backend Lambda function.
+    function-name: rag_backend
+
+logging:
+  level:
+    com.example.lambdaclient: INFO

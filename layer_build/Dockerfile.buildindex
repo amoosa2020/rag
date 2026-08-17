@@ -1,0 +1,41 @@
+# One-off container to build the FAISS index using the same deps as the layer.
+# Run from the project root:
+#   docker build -f layer_build/Dockerfile.buildindex -t rag-build-index .
+#   docker run --rm -e AWS_REGION=us-east-2 -e S3_BUCKET=dealerplatform \
+#     -e S3_OBJECT_KEY="2025 Dealer Profile Job Aid.pptx" \
+#     -e S3_INDEX_KEY=rag/faiss_index.pkl \
+#     -e EMBEDDING_MODEL=amazon.titan-embed-text-v2:0 \
+#     -v %USERPROFILE%\.aws:/root/.aws:ro rag-build-index
+#
+# IMPORTANT: This image is used ONLY to run the build script directly. The
+# Lambda runtime base image's default CMD starts the Runtime Interface Emulator
+# (RIE), which WAITS for an invocation event instead of running our code. We
+# therefore override the entrypoint/CMD to run `python build_embedding.py`
+# directly, which calls build_index() and exits when done.
+FROM public.ecr.aws/lambda/python:3.13
+
+# Native libs that Pillow's compiled extensions need.
+RUN dnf install -y libtiff libjpeg-turbo libwebp zlib libpng freetype openjpeg2 lcms2 harfbuzz glib2 && \
+    dnf clean all
+
+# Same deps as the lightweight layer.
+RUN pip install \
+    langchain-classic==1.0.8 \
+    langchain-community==0.4.2 \
+    langchain-core==1.5.3 \
+    langchain-text-splitters==1.1.2 \
+    pypdf>=4.0.0 \
+    faiss-cpu>=1.8.0 \
+    boto3>=1.34.0 \
+    python-pptx>=1.0.0 \
+    --target /opt/python
+
+# Copy the build script.
+COPY build_embedding.py /var/task/build_embedding.py
+
+# Override the Lambda runtime entrypoint so the script runs and exits instead
+# of waiting for an invocation. The deps were installed to /opt/python (the
+# Lambda layer path), which is NOT on sys.path when running python directly,
+# so we must add it via PYTHONPATH.
+ENV PYTHONPATH=/opt/python
+ENTRYPOINT ["python", "/var/task/build_embedding.py"]

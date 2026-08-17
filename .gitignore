@@ -32,3 +32,4 @@ Thumbs.db
 *.zip
 layer_build/rag-layer.zip
 layer_build/python/
+layer_python/

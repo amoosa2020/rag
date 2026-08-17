@@ -1,4 +1,4 @@
-# AWS Lambda entry point for the RAG backend.
+# AWS Lambda entry point for the RAG statement rephraser.
 # Lambda's default handler is "lambda_function.lambda_handler", so this file
 # MUST be named lambda_function.py and expose a function named lambda_handler.
 import json
@@ -10,31 +10,35 @@ def lambda_handler(event, context):
     """
     AWS Lambda handler.
 
+    Accepts a STATEMENT and rephrases it following the style/format of the
+    Job Aids document (2025 Dealer Profile Job Aid).
+
     Expected event (API Gateway proxy integration):
         {
-            "body": "{\"question\": \"How many casual leaves do I get?\"}"
+            "body": "{\"statement\": \"The dealer profile needs updating.\"}"
         }
 
     Or a plain JSON event:
         {
-            "question": "How many casual leaves do I get?"
+            "statement": "The dealer profile needs updating."
         }
 
-    The FAISS index is loaded once from S3 and cached for warm invocations,
-    so each call only does a similarity search + LLM generation.
+    The FAISS index (built from the Job Aids document) is loaded once from S3
+    and cached for warm invocations, so each call only does a similarity search
+    + LLM rephrasing.
     """
     try:
-        # Extract the question from the incoming event.
-        question = _extract_question(event)
+        # Extract the statement from the incoming event.
+        statement = _extract_statement(event)
 
-        if not question:
-            return _response(400, {"error": "Missing 'question' in the request body."})
+        if not statement:
+            return _response(400, {"error": "Missing 'statement' in the request body."})
 
         # Load the pre-built FAISS index from S3 (cached across warm calls).
         vectorstore = rag.load_index()
 
-        # Run similarity search + LLM generation.
-        result = rag.query_index(question=question, vectorstore=vectorstore)
+        # Run similarity search + LLM rephrasing.
+        result = rag.query_index(statement=statement, vectorstore=vectorstore)
 
         return _response(200, result)
 
@@ -42,8 +46,8 @@ def lambda_handler(event, context):
         return _response(500, {"error": str(exc)})
 
 
-def _extract_question(event):
-    """Pull the 'question' field out of either an API Gateway or plain event."""
+def _extract_statement(event):
+    """Pull the 'statement' field out of either an API Gateway or plain event."""
     body = event.get("body", event)
 
     if isinstance(body, str):
@@ -53,7 +57,7 @@ def _extract_question(event):
             return None
 
     if isinstance(body, dict):
-        return body.get("question")
+        return body.get("statement")
 
     return None
 

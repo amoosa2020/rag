@@ -12,6 +12,8 @@ RUN pip install \
     pypdf>=4.0.0 \
     faiss-cpu>=1.8.0 \
     boto3>=1.34.0 \
+    python-pptx>=1.0.0 \
+    "unstructured[pptx]>=0.14.0" \
     --target /opt/python
 
 # Remove caches to keep the layer small (use python, not find, since the
